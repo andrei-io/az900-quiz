@@ -36,7 +36,31 @@ header {
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
+    gap: 15px;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
     gap: 10px;
+    flex-wrap: wrap;
+}
+
+.skip-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #f1f1f1;
+    padding: 3px;
+    border-radius: 4px;
+}
+
+#skip-input {
+    width: 50px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    text-align: center;
 }
 
 h1, h2, h3 {
@@ -76,7 +100,7 @@ h1, h2, h3 {
 .btn-primary { background-color: var(--primary); width: 100%; margin-top: 20px; font-weight: bold; }
 
 .question-text {
-    white-space: pre-wrap; /* Preserves newlines in JSON */
+    white-space: pre-wrap;
     font-size: 1.1em;
     margin-bottom: 20px;
 }

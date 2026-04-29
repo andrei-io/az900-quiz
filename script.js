@@ -2,275 +2,327 @@
 let allQuestions = [];
 let currentQuestion = null;
 
-// Load progress from localStorage
-let progress = {
-    answeredTitles: JSON.parse(localStorage.getItem('quiz_answered')) || [],
-    correctCount: parseInt(localStorage.getItem('quiz_correct_count')) || 0,
-    totalAnswered: parseInt(localStorage.getItem('quiz_total_answered')) || 0
-};
+// Load progress from localStorage (Mapping Question Title -> true/false/null)
+let progress = JSON.parse(localStorage.getItem("quiz_progress")) || {};
+
+// Migration from the older version of the script (so you don't lose old progress)
+if (
+  localStorage.getItem("quiz_answered") &&
+  !localStorage.getItem("quiz_progress")
+) {
+  let oldAnswered = JSON.parse(localStorage.getItem("quiz_answered")) || [];
+  oldAnswered.forEach((title) => (progress[title] = null));
+  localStorage.removeItem("quiz_answered");
+  localStorage.removeItem("quiz_correct_count");
+  localStorage.removeItem("quiz_total_answered");
+  saveProgress();
+}
 
 // --- DOM Elements ---
 const DOM = {
-    fileUpload: document.getElementById('file-upload'),
-    resetBtn: document.getElementById('reset-btn'),
-    scorePercent: document.getElementById('score-percent'),
-    answeredCount: document.getElementById('answered-count'),
-    msgContainer: document.getElementById('message-container'),
-    quizArea: document.getElementById('question-area'),
-    qTitle: document.getElementById('q-title'),
-    qTopic: document.getElementById('q-topic'),
-    qText: document.getElementById('q-text'),
-    qImages: document.getElementById('q-images'),
-    qInteraction: document.getElementById('q-interaction-area'),
-    qFeedback: document.getElementById('q-feedback-area'),
-    feedbackTitle: document.getElementById('feedback-title'),
-    qAnswerImages: document.getElementById('q-answer-images'),
-    qExplanation: document.getElementById('q-explanation'),
-    selfMarkControls: document.getElementById('self-mark-controls'),
-    nextBtn: document.getElementById('next-btn'),
-    markCorrectBtn: document.getElementById('mark-correct-btn'),
-    markIncorrectBtn: document.getElementById('mark-incorrect-btn')
+  fileUpload: document.getElementById("file-upload"),
+  resetBtn: document.getElementById("reset-btn"),
+  skipInput: document.getElementById("skip-input"),
+  skipBtn: document.getElementById("skip-btn"),
+  scorePercent: document.getElementById("score-percent"),
+  answeredCount: document.getElementById("answered-count"),
+  msgContainer: document.getElementById("message-container"),
+  quizArea: document.getElementById("question-area"),
+  qTitle: document.getElementById("q-title"),
+  qTopic: document.getElementById("q-topic"),
+  qText: document.getElementById("q-text"),
+  qImages: document.getElementById("q-images"),
+  qInteraction: document.getElementById("q-interaction-area"),
+  qFeedback: document.getElementById("q-feedback-area"),
+  feedbackTitle: document.getElementById("feedback-title"),
+  qAnswerImages: document.getElementById("q-answer-images"),
+  qExplanation: document.getElementById("q-explanation"),
+  selfMarkControls: document.getElementById("self-mark-controls"),
+  nextBtn: document.getElementById("next-btn"),
+  markCorrectBtn: document.getElementById("mark-correct-btn"),
+  markIncorrectBtn: document.getElementById("mark-incorrect-btn"),
 };
 
 // --- Initialization ---
 function init() {
-    updateStatsUI();
-    
-    // Attempt to load default questions.json
-    fetch('questions.json')
-        .then(response => {
-            if (!response.ok) throw new Error("Local file not found");
-            return response.json();
-        })
-        .then(data => {
-            allQuestions = data;
-            startQuiz();
-        })
-        .catch(err => {
-            DOM.msgContainer.textContent = "Could not load questions.json automatically. Please upload a file.";
-        });
+  updateStatsUI();
 
-    // Event Listeners
-    DOM.fileUpload.addEventListener('change', handleFileUpload);
-    DOM.resetBtn.addEventListener('click', resetProgress);
-    DOM.nextBtn.addEventListener('click', loadNextQuestion);
-    DOM.markCorrectBtn.addEventListener('click', () => recordSelfMark(true));
-    DOM.markIncorrectBtn.addEventListener('click', () => recordSelfMark(false));
+  fetch("questions.json")
+    .then((response) => {
+      if (!response.ok) throw new Error("Local file not found");
+      return response.json();
+    })
+    .then((data) => {
+      allQuestions = data;
+      startQuiz();
+    })
+    .catch((err) => {
+      DOM.msgContainer.textContent =
+        "Could not load questions.json automatically. Please upload a file.";
+    });
+
+  // Event Listeners
+  DOM.fileUpload.addEventListener("change", handleFileUpload);
+  DOM.resetBtn.addEventListener("click", resetProgress);
+  DOM.skipBtn.addEventListener("click", handleSkip);
+  DOM.nextBtn.addEventListener("click", loadNextQuestion);
+  DOM.markCorrectBtn.addEventListener("click", () => recordSelfMark(true));
+  DOM.markIncorrectBtn.addEventListener("click", () => recordSelfMark(false));
 }
 
 // --- File Handling ---
 function handleFileUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+  const file = event.target.files[0];
+  if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            allQuestions = JSON.parse(e.target.result);
-            startQuiz();
-        } catch (error) {
-            alert("Invalid JSON format.");
-        }
-    };
-    reader.readAsText(file);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      allQuestions = JSON.parse(e.target.result);
+      startQuiz();
+    } catch (error) {
+      alert("Invalid JSON format.");
+    }
+  };
+  reader.readAsText(file);
 }
 
 // --- Quiz Logic ---
 function startQuiz() {
-    DOM.msgContainer.style.display = 'none';
-    DOM.quizArea.style.display = 'block';
-    loadNextQuestion();
+  DOM.msgContainer.style.display = "none";
+  DOM.quizArea.style.display = "block";
+  loadNextQuestion();
+}
+
+function handleSkip() {
+  if (allQuestions.length === 0) return;
+
+  const targetIndex = parseInt(DOM.skipInput.value) - 1; // Convert 1-based to 0-based array index
+
+  if (
+    isNaN(targetIndex) ||
+    targetIndex < 0 ||
+    targetIndex >= allQuestions.length
+  ) {
+    alert(
+      `Please enter a valid question number between 1 and ${allQuestions.length}`,
+    );
+    return;
+  }
+
+  // 1. FORWARD SKIP: Mark all previous questions as skipped (null) if not already answered
+  for (let i = 0; i < targetIndex; i++) {
+    const qTitle = allQuestions[i].title;
+    if (!(qTitle in progress)) {
+      progress[qTitle] = null;
+    }
+  }
+
+  // 2. BACKTRACK: If we are going backward, delete progress for the target question and everything after it
+  for (let i = targetIndex; i < allQuestions.length; i++) {
+    const qTitle = allQuestions[i].title;
+    delete progress[qTitle];
+  }
+
+  // Save and re-load
+  saveProgress();
+  updateStatsUI();
+  DOM.skipInput.value = ""; // clear input
+
+  loadNextQuestion();
 }
 
 function loadNextQuestion() {
-    // Hide feedback areas
-    DOM.qFeedback.style.display = 'none';
-    DOM.selfMarkControls.style.display = 'none';
-    DOM.nextBtn.style.display = 'none';
-    DOM.qInteraction.innerHTML = '';
-    DOM.qImages.innerHTML = '';
-    DOM.qAnswerImages.innerHTML = '';
+  // Hide feedback areas
+  DOM.qFeedback.style.display = "none";
+  DOM.selfMarkControls.style.display = "none";
+  DOM.nextBtn.style.display = "none";
+  DOM.qInteraction.innerHTML = "";
+  DOM.qImages.innerHTML = "";
+  DOM.qAnswerImages.innerHTML = "";
 
-    // Find next unanswered question
-    currentQuestion = allQuestions.find(q => !progress.answeredTitles.includes(q.title));
+  // Find next unanswered question (where title is NOT in the progress object)
+  currentQuestion = allQuestions.find((q) => !(q.title in progress));
 
-    if (!currentQuestion) {
-        DOM.quizArea.style.display = 'none';
-        DOM.msgContainer.style.display = 'block';
-        DOM.msgContainer.textContent = "🎉 You have completed all available questions!";
-        return;
-    }
+  if (!currentQuestion) {
+    DOM.quizArea.style.display = "none";
+    DOM.msgContainer.style.display = "block";
+    DOM.msgContainer.textContent =
+      "🎉 You have completed all available questions!";
+    return;
+  }
 
-    renderQuestion(currentQuestion);
+  renderQuestion(currentQuestion);
 }
 
 function renderQuestion(q) {
-    DOM.qTitle.textContent = q.title;
-    DOM.qTopic.textContent = `Topic: ${q.topic}`;
-    DOM.qText.textContent = q.questionText.replace('//IMG//', ''); // Clean up marker if present
+  DOM.qTitle.textContent = q.title;
+  DOM.qTopic.textContent = `Topic: ${q.topic}`;
+  DOM.qText.textContent = q.questionText.replace("//IMG//", "");
 
-    // Render Question Images
-    if (q.questionImages && q.questionImages.length > 0) {
-        q.questionImages.forEach(src => {
-            const img = document.createElement('img');
-            img.src = src;
-            DOM.qImages.appendChild(img);
-        });
-    }
+  if (q.questionImages && q.questionImages.length > 0) {
+    q.questionImages.forEach((src) => {
+      const img = document.createElement("img");
+      img.src = src;
+      DOM.qImages.appendChild(img);
+    });
+  }
 
-    // Determine Interaction Mode
-    if (q.isMultipleChoice && q.choices) {
-        renderMultipleChoice(q);
-    } else {
-        renderSelfMarking(q);
-    }
+  if (q.isMultipleChoice && q.choices) {
+    renderMultipleChoice(q);
+  } else {
+    renderSelfMarking(q);
+  }
 }
 
 function renderMultipleChoice(q) {
-    const form = document.createElement('form');
-    
-    // Check if the answer requires multiple selections
-    const isMultiSelect = q.correctAnswer && q.correctAnswer.length > 1;
-    const inputType = isMultiSelect ? 'checkbox' : 'radio';
+  const form = document.createElement("form");
 
-    // Sort the choices alphabetically by their keys (A, B, C, D)
-    const sortedChoices = Object.entries(q.choices).sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
-    
-    for (const [key, value] of sortedChoices) {
-        const label = document.createElement('label');
-        label.className = 'choice-label';
-        
-        const input = document.createElement('input');
-        input.type = inputType;
-        input.name = 'choice';
-        input.value = key;
-        
-        label.appendChild(input);
-        label.appendChild(document.createTextNode(` ${key}: ${value}`));
-        form.appendChild(label);
-    }
+  const isMultiSelect = q.correctAnswer && q.correctAnswer.length > 1;
+  const inputType = isMultiSelect ? "checkbox" : "radio";
 
-    const submitBtn = document.createElement('button');
-    submitBtn.type = 'submit';
-    submitBtn.className = 'btn btn-primary';
-    submitBtn.textContent = 'Submit Answer';
-    
-    form.appendChild(submitBtn);
+  const sortedChoices = Object.entries(q.choices).sort(([keyA], [keyB]) =>
+    keyA.localeCompare(keyB),
+  );
 
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        
-        // Gather all checked inputs
-        const selectedInputs = Array.from(form.querySelectorAll('input[name="choice"]:checked'));
-        if (selectedInputs.length === 0) return alert("Please select an answer.");
-        
-        // Extract the selected values, sort them, and combine into a string (e.g., "A" and "D" becomes "AD")
-        const selectedValues = selectedInputs.map(input => input.value).sort().join('');
-        
-        // Sort the correct answer string as well to ensure a safe comparison (e.g., if JSON has "DA", it becomes "AD")
-        const expectedAnswer = q.correctAnswer.split('').sort().join('');
-        
-        const isCorrect = selectedValues === expectedAnswer;
-        
-        handleAnswer(isCorrect);
-        
-        // Prevent further modifications to the form
-        submitBtn.disabled = true;
-        form.querySelectorAll('input').forEach(input => input.disabled = true);
-    });
+  for (const [key, value] of sortedChoices) {
+    const label = document.createElement("label");
+    label.className = "choice-label";
 
-    DOM.qInteraction.appendChild(form);
+    const input = document.createElement("input");
+    input.type = inputType;
+    input.name = "choice";
+    input.value = key;
+
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(` ${key}: ${value}`));
+    form.appendChild(label);
+  }
+
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "submit";
+  submitBtn.className = "btn btn-primary";
+  submitBtn.textContent = "Submit Answer";
+
+  form.appendChild(submitBtn);
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    const selectedInputs = Array.from(
+      form.querySelectorAll('input[name="choice"]:checked'),
+    );
+    if (selectedInputs.length === 0) return alert("Please select an answer.");
+
+    const selectedValues = selectedInputs
+      .map((input) => input.value)
+      .sort()
+      .join("");
+    const expectedAnswer = q.correctAnswer.split("").sort().join("");
+    const isCorrect = selectedValues === expectedAnswer;
+
+    handleAnswer(isCorrect);
+
+    submitBtn.disabled = true;
+    form.querySelectorAll("input").forEach((input) => (input.disabled = true));
+  });
+
+  DOM.qInteraction.appendChild(form);
 }
 
 function renderSelfMarking(q) {
-    const revealBtn = document.createElement('button');
-    revealBtn.className = 'btn btn-primary';
-    revealBtn.textContent = 'Reveal Answer';
-    
-    revealBtn.addEventListener('click', () => {
-        revealBtn.style.display = 'none';
-        showFeedback(null); // null means self-marking mode
-    });
+  const revealBtn = document.createElement("button");
+  revealBtn.className = "btn btn-primary";
+  revealBtn.textContent = "Reveal Answer";
 
-    DOM.qInteraction.appendChild(revealBtn);
+  revealBtn.addEventListener("click", () => {
+    revealBtn.style.display = "none";
+    showFeedback(null);
+  });
+
+  DOM.qInteraction.appendChild(revealBtn);
 }
 
 // --- Evaluation & Feedback ---
 function handleAnswer(isCorrect) {
-    updateProgress(isCorrect);
-    showFeedback(isCorrect);
+  updateProgress(isCorrect);
+  showFeedback(isCorrect);
 }
 
 function recordSelfMark(isCorrect) {
-    updateProgress(isCorrect);
-    DOM.selfMarkControls.style.display = 'none';
-    DOM.nextBtn.style.display = 'block';
+  updateProgress(isCorrect);
+  DOM.selfMarkControls.style.display = "none";
+  DOM.nextBtn.style.display = "block";
 }
 
 function showFeedback(autoGradeResult) {
-    DOM.qFeedback.style.display = 'block';
-    
-    // Auto-graded vs Self-graded logic
-    if (autoGradeResult !== null) {
-        DOM.feedbackTitle.textContent = autoGradeResult ? "✅ Correct!" : `❌ Incorrect! (Correct answer: ${currentQuestion.correctAnswer.split('').sort().join(', ')})`;
-        DOM.feedbackTitle.style.color = autoGradeResult ? "var(--success)" : "var(--danger)";
-        DOM.nextBtn.style.display = 'block';
-    } else {
-        DOM.feedbackTitle.textContent = "Answer Reveal:";
-        DOM.feedbackTitle.style.color = "inherit";
-        if (currentQuestion.correctAnswer) {
-            // Format multiple answers nicely with a comma if applicable
-            DOM.feedbackTitle.textContent += ` ${currentQuestion.correctAnswer.split('').sort().join(', ')}`;
-        }
-        DOM.selfMarkControls.style.display = 'flex';
-    }
+  DOM.qFeedback.style.display = "block";
 
-    // Render Answer Images
-    if (currentQuestion.answerImages && currentQuestion.answerImages.length > 0) {
-        currentQuestion.answerImages.forEach(src => {
-            const img = document.createElement('img');
-            img.src = src;
-            DOM.qAnswerImages.appendChild(img);
-        });
+  if (autoGradeResult !== null) {
+    DOM.feedbackTitle.textContent = autoGradeResult
+      ? "✅ Correct!"
+      : `❌ Incorrect! (Correct answer: ${currentQuestion.correctAnswer.split("").sort().join(", ")})`;
+    DOM.feedbackTitle.style.color = autoGradeResult
+      ? "var(--success)"
+      : "var(--danger)";
+    DOM.nextBtn.style.display = "block";
+  } else {
+    DOM.feedbackTitle.textContent = "Answer Reveal:";
+    DOM.feedbackTitle.style.color = "inherit";
+    if (currentQuestion.correctAnswer) {
+      DOM.feedbackTitle.textContent += ` ${currentQuestion.correctAnswer.split("").sort().join(", ")}`;
     }
+    DOM.selfMarkControls.style.display = "flex";
+  }
 
-    // Render Explanation
-    DOM.qExplanation.textContent = currentQuestion.explanation ? `Explanation: ${currentQuestion.explanation}` : '';
+  if (currentQuestion.answerImages && currentQuestion.answerImages.length > 0) {
+    currentQuestion.answerImages.forEach((src) => {
+      const img = document.createElement("img");
+      img.src = src;
+      DOM.qAnswerImages.appendChild(img);
+    });
+  }
+
+  DOM.qExplanation.textContent = currentQuestion.explanation
+    ? `Explanation: ${currentQuestion.explanation}`
+    : "";
 }
 
 // --- State Updates ---
+function saveProgress() {
+  localStorage.setItem("quiz_progress", JSON.stringify(progress));
+}
+
+function getStats() {
+  let total = 0;
+  let correct = 0;
+  for (const title in progress) {
+    total++;
+    if (progress[title] === true) correct++;
+  }
+  return { total, correct };
+}
+
 function updateProgress(isCorrect) {
-    progress.answeredTitles.push(currentQuestion.title);
-    progress.totalAnswered++;
-    if (isCorrect) progress.correctCount++;
-
-    // Save to localStorage
-    localStorage.setItem('quiz_answered', JSON.stringify(progress.answeredTitles));
-    localStorage.setItem('quiz_correct_count', progress.correctCount);
-    localStorage.setItem('quiz_total_answered', progress.totalAnswered);
-
-    updateStatsUI();
+  progress[currentQuestion.title] = isCorrect;
+  saveProgress();
+  updateStatsUI();
 }
 
 function updateStatsUI() {
-    DOM.answeredCount.textContent = progress.totalAnswered;
-    const percentage = progress.totalAnswered === 0 ? 0 : Math.round((progress.correctCount / progress.totalAnswered) * 100);
-    DOM.scorePercent.textContent = `${percentage}%`;
+  const stats = getStats();
+  DOM.answeredCount.textContent = stats.total;
+  const percentage =
+    stats.total === 0 ? 0 : Math.round((stats.correct / stats.total) * 100);
+  DOM.scorePercent.textContent = `${percentage}%`;
 }
 
 function resetProgress() {
-    if(!confirm("Are you sure you want to reset all your progress?")) return;
-    
-    progress = { answeredTitles: [], correctCount: 0, totalAnswered: 0 };
-    localStorage.removeItem('quiz_answered');
-    localStorage.removeItem('quiz_correct_count');
-    localStorage.removeItem('quiz_total_answered');
-    
-    updateStatsUI();
-    
-    if (allQuestions.length > 0) {
-        startQuiz();
-    }
+  if (!confirm("Are you sure you want to reset all your progress?")) return;
+  progress = {};
+  saveProgress();
+  updateStatsUI();
+  if (allQuestions.length > 0) startQuiz();
 }
 
 // Boot up
